@@ -1,22 +1,3 @@
-"""
-SmartPlayer for the Hex game — solution.py
-==========================================
-All logic lives here. board.py and player.py are provided by the
-tournament harness; we only use their public interface:
-    HexBoard.board, HexBoard.size, .clone(), .place_piece(), .check_connection()
-
-Architecture:
-  Phase 1 — Board navigation helpers
-  Phase 2 — Dijkstra heuristic evaluation
-  Phase 3 — Minimax + Alpha-Beta + Iterative Deepening
-  Phase 4 — CSP candidate-move reduction
-  Phase 5 — Time control & integration  ← implemented here
-             · Opening book (first move → board center)
-             · Adaptive depth ceiling based on board size N
-             · Per-depth elapsed-time guard (don't start a depth we can't finish)
-             · Hard 5 s disqualification guard with a tighter internal deadline
-"""
-
 from __future__ import annotations
 
 import heapq
@@ -32,51 +13,20 @@ _DIRS = (
     ((-1,  0), (-1, 1), (0, -1), (0, 1), (1,  0), (1, 1)),  # odd  row
 )
 
-# ---------------------------------------------------------------------------
-# Phase 5 — Adaptive depth ceilings per board size.
-#
-# Empirically, Alpha-Beta + CSP can search deeper on smaller boards within
-# the 5 s budget.  On a 13×13 board each _evaluate() call runs two Dijkstra
-# passes over 169 cells, so the effective branching factor after CSP pruning
-# still makes depth > 4 rarely reachable before the timer fires.
-#
-# These caps are *ceilings* — iterative deepening will stop earlier whenever
-# the timer fires, so they are safe for any N.
-# ---------------------------------------------------------------------------
+
 def _max_depth_for_size(n: int) -> int:
     if n <= 5:  return 20   # tiny boards: search to near-terminal depth
     if n <= 7:  return 10
     if n <= 9:  return 7
     if n <= 11: return 5
-    return 4                # 13×13 and beyond
+    return 4 
 
-
-# ---------------------------------------------------------------------------
-# Phase 5 — Hard time limit.
-#
-# The tournament disqualifies any move that takes ≥ 5.0 s.
-# We use 4.5 s as the public TIME_LIMIT (documentation / contract).
-# Internally _TIME_GUARD is tighter so we always return well before 5 s even
-# under Python GIL jitter or slow machines.
-#
-# We also reserve a *per-depth budget*: if the time already spent on the
-# current depth exceeds DEPTH_BUDGET_FRAC of the remaining allowance, we skip
-# the next depth entirely.
-# ---------------------------------------------------------------------------
 _HARD_LIMIT    = 5.0   # tournament disqualification threshold (s)
 _TIME_GUARD    = 4.3   # internal deadline — stop *starting* new work here
 _DEPTH_BUDGET_FRAC = 0.45  # if last depth used > 45 % of budget, skip next
 
 
 class SmartPlayer(Player):
-    """
-    Autonomous Hex player.
-    Strategy: Iterative Deepening Alpha-Beta + Dijkstra heuristic + CSP pruning
-              + adaptive depth ceiling + opening book + per-depth time budgeting.
-
-    Public contract:  play(board: HexBoard) -> (row, col)
-    No mutable class-level state → safe to reuse across games.
-    """
 
     TIME_LIMIT:  float = 4.5   # public SLA (documented)
 
@@ -89,29 +39,10 @@ class SmartPlayer(Player):
     # -----------------------------------------------------------------------
 
     def play(self, board: HexBoard) -> tuple[int, int]:
-        """
-        Phase 5 entry point — Iterative Deepening Alpha-Beta with full
-        time control.
-
-        Algorithm:
-          1. Opening book  — if the board is empty (or has only 1 piece),
-             immediately return the centre cell (strongest opening in Hex).
-          2. Greedy fallback — compute a 1-ply heuristic move as the safety
-             net in case the timer fires before any full-depth search finishes.
-          3. Iterative deepening loop — search depths 1 … max_depth(N).
-             · Skip the next depth if the previous depth consumed more than
-               DEPTH_BUDGET_FRAC of the remaining time budget (we almost
-               certainly cannot finish it).
-             · Stop immediately if a forced win (score == ∞) was found.
-             · Stop immediately when _TIME_GUARD seconds have elapsed.
-          4. Return best_move — guaranteed valid, guaranteed within budget.
-        """
+        
         self._start_time = time.time()
         n = board.size
 
-        # ------------------------------------------------------------------
-        # Phase 5 — Step 1: Opening book
-        # ------------------------------------------------------------------
         pieces_on_board = sum(
             board.board[r][c] != 0
             for r in range(n)
@@ -121,17 +52,12 @@ class SmartPlayer(Player):
             center = n // 2
             if board.board[center][center] == 0:
                 return (center, center)
-            # Centre taken (opponent went first and chose it): pick the
-            # next-best cell — one step towards our connection axis.
             for dr, dc in ((0, 1), (0, -1), (1, 0), (-1, 0),
                            (1, 1), (-1, -1), (1, -1), (-1, 1)):
                 nr, nc = center + dr, center + dc
                 if 0 <= nr < n and 0 <= nc < n and board.board[nr][nc] == 0:
                     return (nr, nc)
 
-        # ------------------------------------------------------------------
-        # Step 2: Greedy fallback (never returns None)
-        # ------------------------------------------------------------------
         empty = self._get_empty_cells(board)
         if not empty:
             raise RuntimeError("No moves available — board is full.")
@@ -139,13 +65,10 @@ class SmartPlayer(Player):
         best_move  = self._greedy_move(board, empty)
         max_depth  = _max_depth_for_size(n)
 
-        # ------------------------------------------------------------------
-        # Step 3: Iterative deepening with per-depth time budgeting
-        # ------------------------------------------------------------------
         prev_depth_elapsed = 0.0   # time spent on the last completed depth
 
         for depth in range(1, max_depth + 1):
-            # --- Phase 5: Per-depth budget guard ---
+            
             elapsed   = time.time() - self._start_time
             remaining = _TIME_GUARD - elapsed
 
@@ -173,19 +96,10 @@ class SmartPlayer(Player):
 
         return best_move
 
-    # -----------------------------------------------------------------------
-    # Phase 3 — Iterative Deepening + Alpha-Beta
-    # -----------------------------------------------------------------------
-
     def _best_move_at_depth(
         self, board: HexBoard, depth: int
     ) -> tuple[tuple[int, int] | None, bool]:
-        """One full Alpha-Beta pass at the given depth.
-
-        Returns (best_move, completed).
-        completed=False means the timer fired before all candidates were
-        evaluated, so best_move may not be globally optimal at this depth.
-        """
+        
         best_move:  tuple[int, int] | None = None
         best_score: float = -inf
         self._last_score: float = -inf
@@ -253,33 +167,11 @@ class SmartPlayer(Player):
                     break
             return value
 
-    # -----------------------------------------------------------------------
-    # Phase 4 — CSP candidate-move reduction
-    # -----------------------------------------------------------------------
 
     def _get_candidates(
         self, board: HexBoard, current_player: int
     ) -> list[tuple[int, int]]:
-        """
-        CSP-based candidate move set for current_player.
-
-        Three constraints define the candidate set:
-          C1 — Adjacency:      empty cells neighbouring any existing piece.
-          C2 — Critical path:  cells on the Dijkstra shortest path of either
-                               player (occupying them advances our path or
-                               blocks the opponent's).
-          C3 — Virtual bridge: empty cells that would connect two same-colour
-                               pieces separated by exactly one step through
-                               that cell.
-
-        The candidate set is the UNION of C1 ∪ C2 ∪ C3.
-
-        Fallback: if the union is empty (e.g. completely empty board at the
-        very first move) we return all empty cells so the player is never stuck.
-
-        Final step: sort candidates best-first using the same Dijkstra
-        heuristic so Alpha-Beta prunes as aggressively as possible.
-        """
+    
         candidate_set: set[tuple[int, int]] = set()
 
         candidate_set |= self._constraint_adjacency(board)
@@ -305,13 +197,7 @@ class SmartPlayer(Player):
         return self._sort_candidates(board, list(candidate_set), current_player)
 
     def _constraint_adjacency(self, board: HexBoard) -> set[tuple[int, int]]:
-        """
-        C1: All empty cells that are neighbours of at least one occupied cell.
-
-        Rationale: in Hex, pieces only gain value through connectivity.
-        An empty cell far from any piece cannot affect any current chain
-        and is almost never the optimal move.
-        """
+        
         n = board.size
         candidates: set[tuple[int, int]] = set()
 
@@ -328,16 +214,7 @@ class SmartPlayer(Player):
     def _constraint_critical_path(
         self, board: HexBoard, player_id: int
     ) -> set[tuple[int, int]]:
-        """
-        C2: Empty cells that lie on player_id's current shortest path.
-
-        We reconstruct the actual path by running Dijkstra while tracking
-        predecessors, then trace back from the cheapest goal cell.
-
-        Playing on these cells either:
-          - Advances our own connection (if player_id == self)
-          - Disrupts the opponent's cheapest route (if player_id == opponent)
-        """
+        
         n   = board.size
         opp = 3 - player_id
 
@@ -403,17 +280,7 @@ class SmartPlayer(Player):
     def _constraint_virtual_bridge(
         self, board: HexBoard, player_id: int
     ) -> set[tuple[int, int]]:
-        """
-        C3: Empty cells that form virtual bridges between same-colour pieces.
-
-        A virtual bridge pivot M exists when two same-colour cells A and B
-        share M as a common empty neighbour — regardless of whether A and B
-        are adjacent to each other.  Occupying M either secures or breaks
-        the potential connection between A and B.
-
-        Algorithm: collect all same-colour pieces, then for every pair check
-        their common empty neighbours.  O(k² · 6) where k = number of pieces.
-        """
+        
         n = board.size
         pieces = [
             (r, c)
@@ -441,14 +308,7 @@ class SmartPlayer(Player):
         candidates:     list[tuple[int, int]],
         current_player: int,
     ) -> list[tuple[int, int]]:
-        """
-        Sort candidates best-first for current_player.
-
-        Scoring: simulate placing current_player's piece and compute the
-        resulting heuristic.  Higher is better for self.player_id.
-        We only do full evaluation when the candidate list is small enough
-        to keep sorting overhead negligible.
-        """
+        
         if not candidates:
             return candidates
 
@@ -470,10 +330,7 @@ class SmartPlayer(Player):
     # -----------------------------------------------------------------------
 
     def _dijkstra(self, board: HexBoard, player_id: int) -> float:
-        """
-        Minimum empty cells player_id still needs to fill to connect sides.
-        Cost: own cell=0, empty=1, opponent=∞ (impassable).
-        """
+        
         n   = board.size
         opp = 3 - player_id
 
