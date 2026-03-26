@@ -1,0 +1,130 @@
+{
+  "5": {
+    "smart_vs_smart": {
+      "wins_p1": 1,
+      "wins_p2": 0,
+      "win_rate_p1": 1.0,
+      "win_rate_p2": 0.0,
+      "avg_moves": 15.0,
+      "avg_move_time": 1911.41,
+      "max_move_time": 4306.43,
+      "disqualifications": 0
+    },
+    "smart_vs_random": {
+      "wins_p1": 1,
+      "wins_p2": 0,
+      "win_rate_p1": 1.0,
+      "win_rate_p2": 0.0,
+      "avg_moves": 11.0,
+      "avg_move_time": 760.0,
+      "max_move_time": 4303.01,
+      "disqualifications": 0
+    },
+    "random_vs_smart": {
+      "wins_p1": 0,
+      "wins_p2": 1,
+      "win_rate_p1": 0.0,
+      "win_rate_p2": 1.0,
+      "avg_moves": 12.0,
+      "avg_move_time": 657.01,
+      "max_move_time": 2725.39,
+      "disqualifications": 0
+    }
+  },
+  "7": {
+    "smart_vs_smart": {
+      "wins_p1": 0,
+      "wins_p2": 1,
+      "win_rate_p1": 0.0,
+      "win_rate_p2": 1.0,
+      "avg_moves": 14.0,
+      "avg_move_time": 1723.46,
+      "max_move_time": 2931.52,
+      "disqualifications": 0
+    },
+    "smart_vs_random": {
+      "wins_p1": 1,
+      "wins_p2": 0,
+      "win_rate_p1": 1.0,
+      "win_rate_p2": 0.0,
+      "avg_moves": 17.0,
+      "avg_move_time": 1476.96,
+      "max_move_time": 4311.75,
+      "disqualifications": 0
+    },
+    "random_vs_smart": {
+      "wins_p1": 0,
+      "wins_p2": 1,
+      "win_rate_p1": 0.0,
+      "win_rate_p2": 1.0,
+      "avg_moves": 14.0,
+      "avg_move_time": 1201.72,
+      "max_move_time": 4313.54,
+      "disqualifications": 0
+    }
+  },
+  "9": {
+    "smart_vs_smart": {
+      "wins_p1": 0,
+      "wins_p2": 1,
+      "win_rate_p1": 0.0,
+      "win_rate_p2": 1.0,
+      "avg_moves": 20.0,
+      "avg_move_time": 3317.85,
+      "max_move_time": 4330.32,
+      "disqualifications": 0
+    },
+    "smart_vs_random": {
+      "wins_p1": 1,
+      "wins_p2": 0,
+      "win_rate_p1": 1.0,
+      "win_rate_p2": 0.0,
+      "avg_moves": 19.0,
+      "avg_move_time": 1666.27,
+      "max_move_time": 4330.59,
+      "disqualifications": 0
+    },
+    "random_vs_smart": {
+      "wins_p1": 0,
+      "wins_p2": 1,
+      "win_rate_p1": 0.0,
+      "win_rate_p2": 1.0,
+      "avg_moves": 18.0,
+      "avg_move_time": 1594.12,
+      "max_move_time": 4325.06,
+      "disqualifications": 0
+    }
+  },
+  "11": {
+    "smart_vs_smart": {
+      "wins_p1": 0,
+      "wins_p2": 1,
+      "win_rate_p1": 0.0,
+      "win_rate_p2": 1.0,
+      "avg_moves": 34.0,
+      "avg_move_time": 2235.35,
+      "max_move_time": 4346.33,
+      "disqualifications": 0
+    },
+    "smart_vs_random": {
+      "wins_p1": 1,
+      "wins_p2": 0,
+      "win_rate_p1": 1.0,
+      "win_rate_p2": 0.0,
+      "avg_moves": 23.0,
+      "avg_move_time": 1248.8,
+      "max_move_time": 4331.41,
+      "disqualifications": 0
+    },
+    "random_vs_smart": {
+      "wins_p1": 0,
+      "wins_p2": 1,
+      "win_rate_p1": 0.0,
+      "win_rate_p2": 1.0,
+      "avg_moves": 22.0,
+      "avg_move_time": 1367.78,
+      "max_move_time": 4334.77,
+      "disqualifications": 0
+    }
+  }
+}
