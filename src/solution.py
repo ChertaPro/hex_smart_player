@@ -9,7 +9,12 @@ Architecture:
   Phase 1 — Board navigation helpers
   Phase 2 — Dijkstra heuristic evaluation
   Phase 3 — Minimax + Alpha-Beta + Iterative Deepening
-  Phase 4 — CSP candidate-move reduction    ← implemented here
+  Phase 4 — CSP candidate-move reduction
+  Phase 5 — Time control & integration  ← implemented here
+             · Opening book (first move → board center)
+             · Adaptive depth ceiling based on board size N
+             · Per-depth elapsed-time guard (don't start a depth we can't finish)
+             · Hard 5 s disqualification guard with a tighter internal deadline
 """
 
 from __future__ import annotations
@@ -27,18 +32,53 @@ _DIRS = (
     ((-1,  0), (-1, 1), (0, -1), (0, 1), (1,  0), (1, 1)),  # odd  row
 )
 
+# ---------------------------------------------------------------------------
+# Phase 5 — Adaptive depth ceilings per board size.
+#
+# Empirically, Alpha-Beta + CSP can search deeper on smaller boards within
+# the 5 s budget.  On a 13×13 board each _evaluate() call runs two Dijkstra
+# passes over 169 cells, so the effective branching factor after CSP pruning
+# still makes depth > 4 rarely reachable before the timer fires.
+#
+# These caps are *ceilings* — iterative deepening will stop earlier whenever
+# the timer fires, so they are safe for any N.
+# ---------------------------------------------------------------------------
+def _max_depth_for_size(n: int) -> int:
+    if n <= 5:  return 20   # tiny boards: search to near-terminal depth
+    if n <= 7:  return 10
+    if n <= 9:  return 7
+    if n <= 11: return 5
+    return 4                # 13×13 and beyond
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — Hard time limit.
+#
+# The tournament disqualifies any move that takes ≥ 5.0 s.
+# We use 4.5 s as the public TIME_LIMIT (documentation / contract).
+# Internally _TIME_GUARD is tighter so we always return well before 5 s even
+# under Python GIL jitter or slow machines.
+#
+# We also reserve a *per-depth budget*: if the time already spent on the
+# current depth exceeds DEPTH_BUDGET_FRAC of the remaining allowance, we skip
+# the next depth entirely.
+# ---------------------------------------------------------------------------
+_HARD_LIMIT    = 5.0   # tournament disqualification threshold (s)
+_TIME_GUARD    = 4.3   # internal deadline — stop *starting* new work here
+_DEPTH_BUDGET_FRAC = 0.45  # if last depth used > 45 % of budget, skip next
+
 
 class SmartPlayer(Player):
     """
     Autonomous Hex player.
-    Strategy: Iterative Deepening Alpha-Beta + Dijkstra heuristic + CSP pruning.
+    Strategy: Iterative Deepening Alpha-Beta + Dijkstra heuristic + CSP pruning
+              + adaptive depth ceiling + opening book + per-depth time budgeting.
 
     Public contract:  play(board: HexBoard) -> (row, col)
     No mutable class-level state → safe to reuse across games.
     """
 
-    TIME_LIMIT:  float = 4.5
-    _TIME_GUARD: float = 4.0
+    TIME_LIMIT:  float = 4.5   # public SLA (documented)
 
     def __init__(self, player_id: int) -> None:
         super().__init__(player_id)
@@ -50,29 +90,85 @@ class SmartPlayer(Player):
 
     def play(self, board: HexBoard) -> tuple[int, int]:
         """
-        Iterative Deepening Alpha-Beta (IDAB) with CSP candidate filtering.
-        Always returns a valid move within TIME_LIMIT seconds.
+        Phase 5 entry point — Iterative Deepening Alpha-Beta with full
+        time control.
+
+        Algorithm:
+          1. Opening book  — if the board is empty (or has only 1 piece),
+             immediately return the centre cell (strongest opening in Hex).
+          2. Greedy fallback — compute a 1-ply heuristic move as the safety
+             net in case the timer fires before any full-depth search finishes.
+          3. Iterative deepening loop — search depths 1 … max_depth(N).
+             · Skip the next depth if the previous depth consumed more than
+               DEPTH_BUDGET_FRAC of the remaining time budget (we almost
+               certainly cannot finish it).
+             · Stop immediately if a forced win (score == ∞) was found.
+             · Stop immediately when _TIME_GUARD seconds have elapsed.
+          4. Return best_move — guaranteed valid, guaranteed within budget.
         """
         self._start_time = time.time()
+        n = board.size
 
+        # ------------------------------------------------------------------
+        # Phase 5 — Step 1: Opening book
+        # ------------------------------------------------------------------
+        pieces_on_board = sum(
+            board.board[r][c] != 0
+            for r in range(n)
+            for c in range(n)
+        )
+        if pieces_on_board <= 1:
+            center = n // 2
+            if board.board[center][center] == 0:
+                return (center, center)
+            # Centre taken (opponent went first and chose it): pick the
+            # next-best cell — one step towards our connection axis.
+            for dr, dc in ((0, 1), (0, -1), (1, 0), (-1, 0),
+                           (1, 1), (-1, -1), (1, -1), (-1, 1)):
+                nr, nc = center + dr, center + dc
+                if 0 <= nr < n and 0 <= nc < n and board.board[nr][nc] == 0:
+                    return (nr, nc)
+
+        # ------------------------------------------------------------------
+        # Step 2: Greedy fallback (never returns None)
+        # ------------------------------------------------------------------
         empty = self._get_empty_cells(board)
         if not empty:
             raise RuntimeError("No moves available — board is full.")
 
-        best_move = self._greedy_move(board, empty)
+        best_move  = self._greedy_move(board, empty)
+        max_depth  = _max_depth_for_size(n)
 
-        for depth in range(1, board.size * board.size + 1):
-            if self._time_up():
+        # ------------------------------------------------------------------
+        # Step 3: Iterative deepening with per-depth time budgeting
+        # ------------------------------------------------------------------
+        prev_depth_elapsed = 0.0   # time spent on the last completed depth
+
+        for depth in range(1, max_depth + 1):
+            # --- Phase 5: Per-depth budget guard ---
+            elapsed   = time.time() - self._start_time
+            remaining = _TIME_GUARD - elapsed
+
+            if remaining <= 0:
+                break  # hard stop
+
+            # If the previous depth took more than DEPTH_BUDGET_FRAC of what
+            # is left, the next (deeper) search is very unlikely to complete —
+            # skip it to avoid returning a half-baked result.
+            if depth > 1 and prev_depth_elapsed > DEPTH_BUDGET_FRAC * remaining:
                 break
 
+            depth_start = time.time()
             move, completed = self._best_move_at_depth(board, depth)
+            prev_depth_elapsed = time.time() - depth_start
 
             if completed and move is not None:
                 best_move = move
                 if self._last_score == inf:
-                    break
+                    break   # forced win found — no need to search deeper
 
             if not completed:
+                # Timer fired mid-depth; the partial result may be unreliable.
                 break
 
         return best_move
@@ -84,7 +180,12 @@ class SmartPlayer(Player):
     def _best_move_at_depth(
         self, board: HexBoard, depth: int
     ) -> tuple[tuple[int, int] | None, bool]:
-        """One full Alpha-Beta pass at the given depth."""
+        """One full Alpha-Beta pass at the given depth.
+
+        Returns (best_move, completed).
+        completed=False means the timer fired before all candidates were
+        evaluated, so best_move may not be globally optimal at this depth.
+        """
         best_move:  tuple[int, int] | None = None
         best_score: float = -inf
         self._last_score: float = -inf
@@ -104,7 +205,7 @@ class SmartPlayer(Player):
                 best_move  = (row, col)
 
             if best_score == inf:
-                break
+                break   # forced win — prune remaining root moves
 
         self._last_score = best_score
         return best_move, True
@@ -465,4 +566,12 @@ class SmartPlayer(Player):
     # -----------------------------------------------------------------------
 
     def _time_up(self) -> bool:
-        return (time.time() - self._start_time) >= self._TIME_GUARD
+        """True when internal deadline has been reached."""
+        return (time.time() - self._start_time) >= _TIME_GUARD
+
+
+# ---------------------------------------------------------------------------
+# Module-level constant referenced inside play() — defined after the class
+# so the docstring can reference it by name without a forward-reference issue.
+# ---------------------------------------------------------------------------
+DEPTH_BUDGET_FRAC = _DEPTH_BUDGET_FRAC
