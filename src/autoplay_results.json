@@ -6,8 +6,8 @@
       "win_rate_p1": 1.0,
       "win_rate_p2": 0.0,
       "avg_moves": 15.0,
-      "avg_move_time": 1911.41,
-      "max_move_time": 4306.43,
+      "avg_move_time": 1893.52,
+      "max_move_time": 4302.07,
       "disqualifications": 0
     },
     "smart_vs_random": {
@@ -15,9 +15,9 @@
       "wins_p2": 0,
       "win_rate_p1": 1.0,
       "win_rate_p2": 0.0,
-      "avg_moves": 11.0,
-      "avg_move_time": 760.0,
-      "max_move_time": 4303.01,
+      "avg_moves": 9.0,
+      "avg_move_time": 730.14,
+      "max_move_time": 3022.08,
       "disqualifications": 0
     },
     "random_vs_smart": {
@@ -26,8 +26,8 @@
       "win_rate_p1": 0.0,
       "win_rate_p2": 1.0,
       "avg_moves": 12.0,
-      "avg_move_time": 657.01,
-      "max_move_time": 2725.39,
+      "avg_move_time": 537.53,
+      "max_move_time": 2763.34,
       "disqualifications": 0
     }
   },
@@ -38,8 +38,8 @@
       "win_rate_p1": 0.0,
       "win_rate_p2": 1.0,
       "avg_moves": 14.0,
-      "avg_move_time": 1723.46,
-      "max_move_time": 2931.52,
+      "avg_move_time": 2067.6,
+      "max_move_time": 3534.46,
       "disqualifications": 0
     },
     "smart_vs_random": {
@@ -47,9 +47,9 @@
       "wins_p2": 0,
       "win_rate_p1": 1.0,
       "win_rate_p2": 0.0,
-      "avg_moves": 17.0,
-      "avg_move_time": 1476.96,
-      "max_move_time": 4311.75,
+      "avg_moves": 13.0,
+      "avg_move_time": 1580.34,
+      "max_move_time": 4315.27,
       "disqualifications": 0
     },
     "random_vs_smart": {
@@ -57,9 +57,9 @@
       "wins_p2": 1,
       "win_rate_p1": 0.0,
       "win_rate_p2": 1.0,
-      "avg_moves": 14.0,
-      "avg_move_time": 1201.72,
-      "max_move_time": 4313.54,
+      "avg_moves": 16.0,
+      "avg_move_time": 1378.34,
+      "max_move_time": 4329.8,
       "disqualifications": 0
     }
   },
@@ -70,8 +70,8 @@
       "win_rate_p1": 0.0,
       "win_rate_p2": 1.0,
       "avg_moves": 20.0,
-      "avg_move_time": 3317.85,
-      "max_move_time": 4330.32,
+      "avg_move_time": 3323.54,
+      "max_move_time": 4323.95,
       "disqualifications": 0
     },
     "smart_vs_random": {
@@ -79,9 +79,9 @@
       "wins_p2": 0,
       "win_rate_p1": 1.0,
       "win_rate_p2": 0.0,
-      "avg_moves": 19.0,
-      "avg_move_time": 1666.27,
-      "max_move_time": 4330.59,
+      "avg_moves": 21.0,
+      "avg_move_time": 1397.53,
+      "max_move_time": 4322.0,
       "disqualifications": 0
     },
     "random_vs_smart": {
@@ -90,20 +90,20 @@
       "win_rate_p1": 0.0,
       "win_rate_p2": 1.0,
       "avg_moves": 18.0,
-      "avg_move_time": 1594.12,
-      "max_move_time": 4325.06,
+      "avg_move_time": 985.95,
+      "max_move_time": 4354.51,
       "disqualifications": 0
     }
   },
   "11": {
     "smart_vs_smart": {
-      "wins_p1": 0,
-      "wins_p2": 1,
-      "win_rate_p1": 0.0,
-      "win_rate_p2": 1.0,
-      "avg_moves": 34.0,
-      "avg_move_time": 2235.35,
-      "max_move_time": 4346.33,
+      "wins_p1": 1,
+      "wins_p2": 0,
+      "win_rate_p1": 1.0,
+      "win_rate_p2": 0.0,
+      "avg_moves": 39.0,
+      "avg_move_time": 2130.22,
+      "max_move_time": 4345.98,
       "disqualifications": 0
     },
     "smart_vs_random": {
@@ -112,8 +112,8 @@
       "win_rate_p1": 1.0,
       "win_rate_p2": 0.0,
       "avg_moves": 23.0,
-      "avg_move_time": 1248.8,
-      "max_move_time": 4331.41,
+      "avg_move_time": 1547.65,
+      "max_move_time": 4359.62,
       "disqualifications": 0
     },
     "random_vs_smart": {
@@ -122,8 +122,8 @@
       "win_rate_p1": 0.0,
       "win_rate_p2": 1.0,
       "avg_moves": 22.0,
-      "avg_move_time": 1367.78,
-      "max_move_time": 4334.77,
+      "avg_move_time": 1523.71,
+      "max_move_time": 4384.8,
       "disqualifications": 0
     }
   }

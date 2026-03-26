@@ -414,10 +414,3 @@ class SmartPlayer(Player):
     def _time_up(self) -> bool:
         """True when internal deadline has been reached."""
         return (time.time() - self._start_time) >= _TIME_GUARD
-
-
-# ---------------------------------------------------------------------------
-# Module-level constant referenced inside play() — defined after the class
-# so the docstring can reference it by name without a forward-reference issue.
-# ---------------------------------------------------------------------------
-DEPTH_BUDGET_FRAC = _DEPTH_BUDGET_FRAC
