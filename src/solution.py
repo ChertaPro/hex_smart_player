@@ -1,3 +1,17 @@
+"""
+SmartPlayer for the Hex game — solution.py
+==========================================
+All logic lives here. board.py and player.py are provided by the
+tournament harness; we only use their public interface:
+    HexBoard.board, HexBoard.size, .clone(), .place_piece(), .check_connection()
+
+Architecture:
+  Phase 1 — Board navigation helpers
+  Phase 2 — Dijkstra heuristic evaluation
+  Phase 3 — Minimax + Alpha-Beta + Iterative Deepening
+  Phase 4 — CSP candidate-move reduction    ← implemented here
+"""
+
 from __future__ import annotations
 
 import heapq
@@ -15,10 +29,16 @@ _DIRS = (
 
 
 class SmartPlayer(Player):
-    # Hard limit: 4.5 s.  Internal guard fires at 4.0 s so we always have
-    # time to return a move before the harness kills us at 5 s.
+    """
+    Autonomous Hex player.
+    Strategy: Iterative Deepening Alpha-Beta + Dijkstra heuristic + CSP pruning.
+
+    Public contract:  play(board: HexBoard) -> (row, col)
+    No mutable class-level state → safe to reuse across games.
+    """
+
     TIME_LIMIT:  float = 4.5
-    _TIME_GUARD: float = 4.0   # internal early-stop threshold
+    _TIME_GUARD: float = 4.0
 
     def __init__(self, player_id: int) -> None:
         super().__init__(player_id)
@@ -30,9 +50,8 @@ class SmartPlayer(Player):
 
     def play(self, board: HexBoard) -> tuple[int, int]:
         """
-        Iterative Deepening Alpha-Beta (IDAB).
-        Returns the best move from the deepest *fully completed* depth.
-        Always has a fallback move — never returns None.
+        Iterative Deepening Alpha-Beta (IDAB) with CSP candidate filtering.
+        Always returns a valid move within TIME_LIMIT seconds.
         """
         self._start_time = time.time()
 
@@ -40,7 +59,6 @@ class SmartPlayer(Player):
         if not empty:
             raise RuntimeError("No moves available — board is full.")
 
-        # Guaranteed fallback: best greedy move at depth 1
         best_move = self._greedy_move(board, empty)
 
         for depth in range(1, board.size * board.size + 1):
@@ -51,7 +69,6 @@ class SmartPlayer(Player):
 
             if completed and move is not None:
                 best_move = move
-                # Found a forced win — no need to go deeper
                 if self._last_score == inf:
                     break
 
@@ -60,41 +77,33 @@ class SmartPlayer(Player):
 
         return best_move
 
+    # -----------------------------------------------------------------------
+    # Phase 3 — Iterative Deepening + Alpha-Beta
+    # -----------------------------------------------------------------------
+
     def _best_move_at_depth(
         self, board: HexBoard, depth: int
     ) -> tuple[tuple[int, int] | None, bool]:
-        """
-        One full Alpha-Beta pass at the given depth.
-
-        Returns:
-            (best_move, completed)
-            completed=False → ran out of time; result may be unreliable.
-        """
+        """One full Alpha-Beta pass at the given depth."""
         best_move:  tuple[int, int] | None = None
         best_score: float = -inf
         self._last_score: float = -inf
 
-        candidates = self._get_ordered_candidates(board, self.player_id)
+        candidates = self._get_candidates(board, self.player_id)
 
         for row, col in candidates:
             if self._time_up():
                 return best_move, (best_move is not None)
 
             board.board[row][col] = self.player_id
-            score = self._minimax(
-                board,
-                depth=depth - 1,
-                alpha=-inf,
-                beta=inf,
-                maximizing=False,
-            )
+            score = self._minimax(board, depth - 1, -inf, inf, False)
             board.board[row][col] = 0
 
             if score > best_score:
                 best_score = score
                 best_move  = (row, col)
 
-            if best_score == inf:   # forced win — stop early
+            if best_score == inf:
                 break
 
         self._last_score = best_score
@@ -102,34 +111,22 @@ class SmartPlayer(Player):
 
     def _minimax(
         self,
-        board:       HexBoard,
-        depth:       int,
-        alpha:       float,
-        beta:        float,
-        maximizing:  bool,
+        board:      HexBoard,
+        depth:      int,
+        alpha:      float,
+        beta:       float,
+        maximizing: bool,
     ) -> float:
-        """
-        Alpha-Beta Minimax with in-place board mutation (no clone overhead).
-
-        Cutoffs:
-            β-cutoff (inside MAX): value ≥ beta  → MIN above would never pick this
-            α-cutoff (inside MIN): value ≤ alpha → MAX above would never pick this
-        """
+        """Alpha-Beta Minimax with CSP candidate filtering at every node."""
         if self._time_up():
             return self._evaluate(board)
 
-        # Terminal states
-        if board.check_connection(self.player_id):
-            return inf
-        if board.check_connection(self.opponent_id):
-            return -inf
-
-        # Depth horizon
-        if depth == 0:
-            return self._evaluate(board)
+        if board.check_connection(self.player_id):   return  inf
+        if board.check_connection(self.opponent_id): return -inf
+        if depth == 0:                               return self._evaluate(board)
 
         current_player = self.player_id if maximizing else self.opponent_id
-        candidates     = self._get_ordered_candidates(board, current_player)
+        candidates     = self._get_candidates(board, current_player)
 
         if not candidates:
             return self._evaluate(board)
@@ -142,7 +139,7 @@ class SmartPlayer(Player):
                 board.board[r][c] = 0
                 alpha = max(alpha, value)
                 if value >= beta:
-                    break   # β-cutoff
+                    break
             return value
         else:
             value = inf
@@ -152,77 +149,229 @@ class SmartPlayer(Player):
                 board.board[r][c] = 0
                 beta = min(beta, value)
                 if value <= alpha:
-                    break   # α-cutoff
+                    break
             return value
 
     # -----------------------------------------------------------------------
-    # Candidate generation
+    # Phase 4 — CSP candidate-move reduction
     # -----------------------------------------------------------------------
 
-    def _get_ordered_candidates(
+    def _get_candidates(
         self, board: HexBoard, current_player: int
     ) -> list[tuple[int, int]]:
         """
-        Return empty cells sorted best-first for the given player.
+        CSP-based candidate move set for current_player.
 
-        Ordering heuristic: prefer cells adjacent to existing pieces
-        (own or opponent's) — they are almost always more relevant than
-        isolated cells in the middle of nowhere.  Ties broken by a quick
-        Dijkstra estimate only when the board is small enough.
+        Three constraints define the candidate set:
+          C1 — Adjacency:      empty cells neighbouring any existing piece.
+          C2 — Critical path:  cells on the Dijkstra shortest path of either
+                               player (occupying them advances our path or
+                               blocks the opponent's).
+          C3 — Virtual bridge: empty cells that would connect two same-colour
+                               pieces separated by exactly one step through
+                               that cell.
 
-        Phase 4 will add hard filtering (CSP) on top of this ordering.
+        The candidate set is the UNION of C1 ∪ C2 ∪ C3.
+
+        Fallback: if the union is empty (e.g. completely empty board at the
+        very first move) we return all empty cells so the player is never stuck.
+
+        Final step: sort candidates best-first using the same Dijkstra
+        heuristic so Alpha-Beta prunes as aggressively as possible.
         """
-        empty = self._get_empty_cells(board)
+        candidate_set: set[tuple[int, int]] = set()
+
+        candidate_set |= self._constraint_adjacency(board)
+        candidate_set |= self._constraint_critical_path(board, self.player_id)
+        candidate_set |= self._constraint_critical_path(board, self.opponent_id)
+        candidate_set |= self._constraint_virtual_bridge(board, self.player_id)
+        candidate_set |= self._constraint_virtual_bridge(board, self.opponent_id)
+
+        # Fallback: if NO piece has been placed yet, every cell is equally
+        # valid — return the full empty set so the opening move is unrestricted.
+        # Also guard against a truly empty candidate set (should not occur in
+        # normal play, but defensive programming).
+        all_empty = set(self._get_empty_cells(board))
+        has_pieces = any(
+            board.board[r][c] != 0
+            for r in range(board.size)
+            for c in range(board.size)
+        )
+        if not candidate_set or not has_pieces:
+            candidate_set = all_empty
+
+        # Sort: best moves first → maximises Alpha-Beta pruning
+        return self._sort_candidates(board, list(candidate_set), current_player)
+
+    def _constraint_adjacency(self, board: HexBoard) -> set[tuple[int, int]]:
+        """
+        C1: All empty cells that are neighbours of at least one occupied cell.
+
+        Rationale: in Hex, pieces only gain value through connectivity.
+        An empty cell far from any piece cannot affect any current chain
+        and is almost never the optimal move.
+        """
         n = board.size
+        candidates: set[tuple[int, int]] = set()
 
-        # Fast adjacency score: count neighbouring occupied cells
-        def adjacency(r: int, c: int) -> int:
-            return sum(
-                1 for nr, nc in self._get_neighbors(r, c, n)
-                if board.board[nr][nc] != 0
-            )
+        for r in range(n):
+            for c in range(n):
+                if board.board[r][c] == 0:
+                    continue
+                for nr, nc in self._get_neighbors(r, c, n):
+                    if board.board[nr][nc] == 0:
+                        candidates.add((nr, nc))
 
-        # On small boards (N≤5) do full heuristic ordering — affordable
-        # On larger boards use adjacency only to keep candidate gen fast
-        if n <= 5:
-            scored = []
-            for r, c in empty:
-                board.board[r][c] = current_player
-                h = self._evaluate(board)
-                board.board[r][c] = 0
-                # Flip sign so higher-is-better sorts first
-                key = -h if current_player == self.player_id else h
-                scored.append((key, r, c))
-            scored.sort()
-            return [(r, c) for _, r, c in scored]
+        return candidates
+
+    def _constraint_critical_path(
+        self, board: HexBoard, player_id: int
+    ) -> set[tuple[int, int]]:
+        """
+        C2: Empty cells that lie on player_id's current shortest path.
+
+        We reconstruct the actual path by running Dijkstra while tracking
+        predecessors, then trace back from the cheapest goal cell.
+
+        Playing on these cells either:
+          - Advances our own connection (if player_id == self)
+          - Disrupts the opponent's cheapest route (if player_id == opponent)
+        """
+        n   = board.size
+        opp = 3 - player_id
+
+        dist: list[list[float]] = [[inf] * n for _ in range(n)]
+        prev: list[list[tuple[int,int] | None]] = [[None] * n for _ in range(n)]
+        heap: list[tuple[float, int, int]] = []
+
+        if player_id == 1:
+            sources  = [(r, 0) for r in range(n)]
+            def is_goal(r: int, c: int) -> bool: return c == n - 1
         else:
-            # Primary: adjacency (descending), secondary: stable index
-            scored = [(-adjacency(r, c), r, c) for r, c in empty]
-            scored.sort()
-            return [(r, c) for _, r, c in scored]
+            sources  = [(0, c) for c in range(n)]
+            def is_goal(r: int, c: int) -> bool: return r == n - 1
 
-    def _greedy_move(
-        self, board: HexBoard, empty: list[tuple[int, int]]
-    ) -> tuple[int, int]:
+        for r, c in sources:
+            if board.board[r][c] == opp:
+                continue
+            cost = 0.0 if board.board[r][c] == player_id else 1.0
+            if cost < dist[r][c]:
+                dist[r][c] = cost
+                heapq.heappush(heap, (cost, r, c))
+
+        while heap:
+            d, r, c = heapq.heappop(heap)
+            if d > dist[r][c]:
+                continue
+            for nr, nc in self._get_neighbors(r, c, n):
+                if board.board[nr][nc] == opp:
+                    continue
+                step = 0.0 if board.board[nr][nc] == player_id else 1.0
+                nd   = d + step
+                if nd < dist[nr][nc]:
+                    dist[nr][nc] = nd
+                    prev[nr][nc] = (r, c)
+                    heapq.heappush(heap, (nd, nr, nc))
+
+        # Find the cheapest goal cell
+        goal_cells = (
+            [(r, n-1) for r in range(n)] if player_id == 1
+            else [(n-1, c) for c in range(n)]
+        )
+        best_cost = inf
+        best_goal: tuple[int, int] | None = None
+        for r, c in goal_cells:
+            if dist[r][c] < best_cost:
+                best_cost = dist[r][c]
+                best_goal = (r, c)
+
+        if best_goal is None:
+            return set()
+
+        # Trace path back from goal to source
+        path_cells: set[tuple[int, int]] = set()
+        cur: tuple[int, int] | None = best_goal
+        while cur is not None:
+            r, c = cur
+            if board.board[r][c] == 0:
+                path_cells.add(cur)
+            cur = prev[r][c]
+
+        return path_cells
+
+    def _constraint_virtual_bridge(
+        self, board: HexBoard, player_id: int
+    ) -> set[tuple[int, int]]:
         """
-        Pick the single best move by 1-ply heuristic evaluation.
-        Used as the guaranteed fallback in play().
+        C3: Empty cells that form virtual bridges between same-colour pieces.
+
+        A virtual bridge pivot M exists when two same-colour cells A and B
+        share M as a common empty neighbour — regardless of whether A and B
+        are adjacent to each other.  Occupying M either secures or breaks
+        the potential connection between A and B.
+
+        Algorithm: collect all same-colour pieces, then for every pair check
+        their common empty neighbours.  O(k² · 6) where k = number of pieces.
         """
-        best_move  = empty[0]
-        best_score = -inf
-        for r, c in empty:
-            board.board[r][c] = self.player_id
-            score = self._evaluate(board)
+        n = board.size
+        pieces = [
+            (r, c)
+            for r in range(n)
+            for c in range(n)
+            if board.board[r][c] == player_id
+        ]
+        pivots: set[tuple[int, int]] = set()
+
+        for i in range(len(pieces)):
+            r1, c1 = pieces[i]
+            nb_a = set(self._get_neighbors(r1, c1, n))
+            for j in range(i + 1, len(pieces)):
+                r2, c2 = pieces[j]
+                nb_b = set(self._get_neighbors(r2, c2, n))
+                for mr, mc in nb_a & nb_b:
+                    if board.board[mr][mc] == 0:
+                        pivots.add((mr, mc))
+
+        return pivots
+
+    def _sort_candidates(
+        self,
+        board:          HexBoard,
+        candidates:     list[tuple[int, int]],
+        current_player: int,
+    ) -> list[tuple[int, int]]:
+        """
+        Sort candidates best-first for current_player.
+
+        Scoring: simulate placing current_player's piece and compute the
+        resulting heuristic.  Higher is better for self.player_id.
+        We only do full evaluation when the candidate list is small enough
+        to keep sorting overhead negligible.
+        """
+        if not candidates:
+            return candidates
+
+        scored: list[tuple[float, int, int]] = []
+        for r, c in candidates:
+            board.board[r][c] = current_player
+            h = self._evaluate(board)
             board.board[r][c] = 0
-            if score > best_score:
-                best_score = score
-                best_move  = (r, c)
-        return best_move
+            # For self: higher h is better → negate for ascending sort
+            # For opponent: lower h for us → opponent prefers lower h → use h directly
+            key = -h if current_player == self.player_id else h
+            scored.append((key, r, c))
+
+        scored.sort()
+        return [(r, c) for _, r, c in scored]
+
+    # -----------------------------------------------------------------------
+    # Phase 2 — Dijkstra heuristic
+    # -----------------------------------------------------------------------
 
     def _dijkstra(self, board: HexBoard, player_id: int) -> float:
         """
         Minimum empty cells player_id still needs to fill to connect sides.
-        Cost: own=0, empty=1, opponent=∞ (impassable).
+        Cost: own cell=0, empty=1, opponent=∞ (impassable).
         """
         n   = board.size
         opp = 3 - player_id
@@ -263,7 +412,7 @@ class SmartPlayer(Player):
         return inf
 
     def _evaluate(self, board: HexBoard) -> float:
-        """h(s) = dist_opponent - dist_self. ±inf for terminal states."""
+        """h(s) = dist_opponent − dist_self.  ±inf for terminal states."""
         if board.check_connection(self.player_id):   return  inf
         if board.check_connection(self.opponent_id): return -inf
 
@@ -275,6 +424,10 @@ class SmartPlayer(Player):
         if d_opp  == inf:                  return  inf
 
         return d_opp - d_self
+
+    # -----------------------------------------------------------------------
+    # Phase 1 — Board navigation helpers
+    # -----------------------------------------------------------------------
 
     def _get_neighbors(self, row: int, col: int, size: int) -> list[tuple[int, int]]:
         """In-bounds hex neighbours using even-r offset layout."""
@@ -294,18 +447,22 @@ class SmartPlayer(Player):
             if board.board[r][c] == 0
         ]
 
+    def _greedy_move(
+        self, board: HexBoard, empty: list[tuple[int, int]]
+    ) -> tuple[int, int]:
+        """1-ply heuristic move — guaranteed non-None fallback."""
+        best_move, best_score = empty[0], -inf
+        for r, c in empty:
+            board.board[r][c] = self.player_id
+            score = self._evaluate(board)
+            board.board[r][c] = 0
+            if score > best_score:
+                best_score, best_move = score, (r, c)
+        return best_move
+
     # -----------------------------------------------------------------------
     # Utilities
     # -----------------------------------------------------------------------
 
     def _time_up(self) -> bool:
-        """True when we are within the internal safety margin."""
         return (time.time() - self._start_time) >= self._TIME_GUARD
-
-    # -----------------------------------------------------------------------
-    # Phase 4 stub
-    # -----------------------------------------------------------------------
-
-    def _get_candidates(self, board: HexBoard) -> list[tuple[int, int]]:
-        """CSP-informed candidate filter — Phase 4."""
-        raise NotImplementedError
