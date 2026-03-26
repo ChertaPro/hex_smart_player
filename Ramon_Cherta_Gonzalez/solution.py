@@ -325,9 +325,6 @@ class SmartPlayer(Player):
         scored.sort()
         return [(r, c) for _, r, c in scored]
 
-    # -----------------------------------------------------------------------
-    # Phase 2 — Dijkstra heuristic
-    # -----------------------------------------------------------------------
 
     def _dijkstra(self, board: HexBoard, player_id: int) -> float:
         
@@ -383,10 +380,6 @@ class SmartPlayer(Player):
 
         return d_opp - d_self
 
-    # -----------------------------------------------------------------------
-    # Phase 1 — Board navigation helpers
-    # -----------------------------------------------------------------------
-
     def _get_neighbors(self, row: int, col: int, size: int) -> list[tuple[int, int]]:
         """In-bounds hex neighbours using even-r offset layout."""
         return [
@@ -417,10 +410,6 @@ class SmartPlayer(Player):
             if score > best_score:
                 best_score, best_move = score, (r, c)
         return best_move
-
-    # -----------------------------------------------------------------------
-    # Utilities
-    # -----------------------------------------------------------------------
 
     def _time_up(self) -> bool:
         """True when internal deadline has been reached."""
